@@ -10,6 +10,10 @@
 #include <vtkPointData.h>
 #include <vtkDoubleArray.h>
 #include <vtkLookupTable.h>
+#include <vtkCellDataToPointData.h>
+#include <vtkPointDataToCellData.h>
+#include <vtkExtractEdges.h>
+#include <vtkFeatureEdges.h>
 #include "json.h"
 
 int main(int argc, char *argv[])
@@ -66,24 +70,69 @@ int main(int argc, char *argv[])
   vtkstress->GetRange(range);
   outputPolyData->GetPointData()->SetAttribute(vtkstress, vtkDataSetAttributes::SCALARS);
 
+  //point to cell and then cell to point
+  // cell 2 point and contour
+  vtkSmartPointer<vtkPointDataToCellData>p2c = vtkPointDataToCellData::New();
+  vtkSmartPointer<vtkCellDataToPointData> c2p = vtkCellDataToPointData::New();
+  p2c->SetInputConnection(reader->GetOutputPort());
+  p2c->PassPointDataOn();
+  c2p->SetInputConnection(p2c->GetOutputPort());
+  c2p->SetContributingCellOption(c2p->All);
+  c2p->PassCellDataOn();
+
   //create the colormap
   // Create the color map
   vtkSmartPointer<vtkLookupTable> colorLookupTable =
     vtkSmartPointer<vtkLookupTable>::New();
   colorLookupTable->SetTableRange(range);
   colorLookupTable->SetHueRange(.667, 0);
+  colorLookupTable->SetRampToLinear();
   colorLookupTable->Build();
 
- // create the height representation
+ // create the scalar map
   vtkNew<vtkDataSetMapper> mapper;
-  mapper->SetInputConnection(reader->GetOutputPort());
+  mapper->SetInputConnection(c2p->GetOutputPort());
   mapper->SelectColorArray("vtkstress");
+  //mapper->InterpolateScalarsBeforeMappingOn();
   //mapper->SetScalarRange(range);
   mapper->SetLookupTable(colorLookupTable);
 
   vtkSmartPointer<vtkActor> actor =
     vtkSmartPointer<vtkActor>::New();
   actor->SetMapper(mapper);
+
+  //to display the mesh
+  vtkSmartPointer<vtkExtractEdges> extractEdges =
+    vtkSmartPointer<vtkExtractEdges>::New();
+  extractEdges->SetInputConnection(reader->GetOutputPort());
+  extractEdges->Update();
+
+  // Visualize
+  vtkSmartPointer<vtkPolyDataMapper> edgemapper =
+    vtkSmartPointer<vtkPolyDataMapper>::New();
+  edgemapper->SetInputConnection(extractEdges->GetOutputPort());
+  vtkSmartPointer<vtkActor> edgeactor =
+    vtkSmartPointer<vtkActor>::New();
+  edgeactor->SetMapper(edgemapper);
+
+  //feature edge
+  vtkSmartPointer<vtkFeatureEdges> featureEdges =
+    vtkSmartPointer<vtkFeatureEdges>::New();
+  featureEdges->SetInputConnection(reader->GetOutputPort());
+  featureEdges->BoundaryEdgesOn();
+  featureEdges->FeatureEdgesOff();
+  featureEdges->ManifoldEdgesOff();
+  featureEdges->NonManifoldEdgesOff();
+  featureEdges->Update();
+
+  // Visualize
+  vtkSmartPointer<vtkPolyDataMapper> fedgeMapper =
+    vtkSmartPointer<vtkPolyDataMapper>::New();
+  fedgeMapper->SetInputConnection(featureEdges->GetOutputPort());
+  vtkSmartPointer<vtkActor> fedgeActor =
+    vtkSmartPointer<vtkActor>::New();
+  fedgeActor->SetMapper(fedgeMapper);
+
 
   vtkSmartPointer<vtkRenderer> renderer =
     vtkSmartPointer<vtkRenderer>::New();
@@ -95,6 +144,9 @@ int main(int argc, char *argv[])
   renderWindowInteractor->SetRenderWindow(renderWindow);
 
   renderer->AddActor(actor);
+  renderer->AddActor(fedgeActor);
+  renderer->AddActor(edgeactor);
+
   //renderer->SetBackground(0.1804, 0.5451, 0.3412); // Sea green
 
   renderWindow->Render();
